@@ -1,0 +1,360 @@
+import java.awt.*; 
+import java.awt.event.*; 
+import java.sql.*; 
+import javax.swing.*; 
+import javax.swing.table.DefaultTableModel;
+
+class Room { 
+    int roomNumber; 
+    boolean occupied; 
+    String guestName; 
+    int roomType; // 1 for Single, 2 for Double, 3 for Suite 
+    
+    public Room(int roomNumber, int roomType) { 
+        this.roomNumber = roomNumber; 
+        this.roomType = roomType; 
+        this.occupied = false; 
+        this.guestName = ""; 
+    } 
+    
+    public static Room getRoom(int roomNumber) { 
+        String query = "SELECT * FROM rooms WHERE room_number = ?"; 
+        try (Connection connection = DatabaseConnection.getConnection(); 
+             PreparedStatement preparedStatement = connection.prepareStatement(query)) { 
+            preparedStatement.setInt(1, roomNumber); 
+            ResultSet resultSet = preparedStatement.executeQuery(); 
+            if (resultSet.next()) { 
+                Room room = new Room(resultSet.getInt("room_number"), resultSet.getInt("room_type")); 
+                room.occupied = resultSet.getInt("occupied") == 1; 
+                room.guestName = resultSet.getString("guest_name"); 
+                return room; 
+            } 
+        } catch (SQLException e) { 
+            e.printStackTrace(); 
+        } 
+        return null; 
+    } 
+    
+    public void save() { 
+        String query = "INSERT INTO rooms (room_number, occupied, guest_name, room_type) VALUES (?, ?, ?, ?)"; 
+        try (Connection connection = DatabaseConnection.getConnection(); 
+             PreparedStatement preparedStatement = connection.prepareStatement(query)) { 
+            preparedStatement.setInt(1, this.roomNumber); 
+            preparedStatement.setInt(2, this.occupied ? 1 : 0); 
+            preparedStatement.setString(3, this.guestName); 
+            preparedStatement.setInt(4, this.roomType); 
+            preparedStatement.executeUpdate(); 
+        } catch (SQLException e) { 
+            e.printStackTrace(); 
+        } 
+    } 
+    
+    public void update() { 
+        String query = "UPDATE rooms SET occupied = ?, guest_name = ?, room_type = ? WHERE room_number = ?"; 
+        try (Connection connection = DatabaseConnection.getConnection(); 
+             PreparedStatement preparedStatement = connection.prepareStatement(query)) { 
+            preparedStatement.setInt(1, this.occupied ? 1 : 0); 
+            preparedStatement.setString(2, this.guestName); 
+            preparedStatement.setInt(3, this.roomType); 
+            preparedStatement.setInt(4, this.roomNumber); 
+            preparedStatement.executeUpdate(); 
+        } catch (SQLException e) { 
+            e.printStackTrace(); 
+        } 
+    } 
+}
+
+class DatabaseConnection { 
+    private static final String URL = "jdbc:oracle:thin:@localhost:1521:XE"; 
+    private static final String USER = "admin"; 
+    private static final String PASSWORD = "123"; 
+    
+    public static Connection getConnection() throws SQLException { 
+        return DriverManager.getConnection(URL, USER, PASSWORD); 
+    } 
+}
+
+class DatabaseInitializer { 
+    public static void initialize() { 
+        String createRoomsTable = 
+                "CREATE TABLE rooms (" + 
+                        "room_number NUMBER PRIMARY KEY, " + 
+                        "occupied NUMBER(1), " + 
+                        "guest_name VARCHAR2(100), " + 
+                        "room_type NUMBER)"; 
+        try (Connection connection = DatabaseConnection.getConnection(); 
+             Statement statement = connection.createStatement()) { 
+            statement.executeUpdate(createRoomsTable); 
+            System.out.println("Schema created successfully."); 
+        } catch (SQLException e) { 
+            e.printStackTrace(); 
+        } 
+    } 
+}
+
+class AdminLogin {
+    private static final String ADMIN_USERNAME = "admin";
+    private static final String ADMIN_PASSWORD = "123";
+    private static final String USER_USERNAME = "user";
+    private static final String USER_PASSWORD = "user123";
+
+    public static void showLoginScreen() {
+        JFrame loginFrame = new JFrame("Login");
+        loginFrame.setSize(400, 300);
+        loginFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        loginFrame.setLayout(new GridLayout(4, 2));
+
+        JLabel usernameLabel = new JLabel("Username:");
+        JTextField usernameField = new JTextField();
+        JLabel passwordLabel = new JLabel("Password:");
+        JPasswordField passwordField = new JPasswordField();
+        JButton adminLoginButton = new JButton("Admin Login");
+        JButton userLoginButton = new JButton("User Login");
+
+        loginFrame.add(usernameLabel);
+        loginFrame.add(usernameField);
+        loginFrame.add(passwordLabel);
+        loginFrame.add(passwordField);
+        loginFrame.add(adminLoginButton);
+        loginFrame.add(userLoginButton);
+
+        // Admin login action listener
+        adminLoginButton.addActionListener(e -> {
+            String username = usernameField.getText();
+            String password = new String(passwordField.getPassword());
+
+            if (username.equals(ADMIN_USERNAME) && password.equals(ADMIN_PASSWORD)) {
+                JOptionPane.showMessageDialog(loginFrame, "Admin Login Successful!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                loginFrame.setVisible(false);
+                ReservationGUI.showAdminMenu(); // Show the Admin Menu
+            } else {
+                JOptionPane.showMessageDialog(loginFrame, "Invalid admin credentials, try again.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        // User login action listener
+        userLoginButton.addActionListener(e -> {
+            String username = usernameField.getText();
+            String password = new String(passwordField.getPassword());
+
+            if (username.equals(USER_USERNAME) && password.equals(USER_PASSWORD)) {
+                JOptionPane.showMessageDialog(loginFrame, "User Login Successful!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                loginFrame.setVisible(false);
+                UserPanel.showUserPanel(); // Show the User Panel
+            } else {
+                JOptionPane.showMessageDialog(loginFrame, "Invalid user credentials, try again.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        loginFrame.setVisible(true);
+    }
+}
+
+class ReservationGUI {
+
+    protected static final int NUM_ROOMS = 20; // Fixed number of rooms (20 rooms)
+    protected static final Room[] hotelRooms = new Room[NUM_ROOMS];
+    private static DefaultTableModel adminTableModel;
+
+    public static void showAdminMenu() {
+        JFrame frame = new JFrame("Admin Panel");
+        frame.setSize(800, 600);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setLayout(new BorderLayout());
+
+        adminTableModel = new DefaultTableModel(new String[]{"Room Number", "Room Type", "Occupied", "Guest Name"}, 0);
+        JTable adminTable = new JTable(adminTableModel);
+
+        JScrollPane tableScrollPane = new JScrollPane(adminTable);
+        JPanel buttonPanel = new JPanel();
+
+        JButton checkoutButton = new JButton("Check Out Guest");
+        JButton reserveButton = new JButton("Reserve Room");
+        JButton logoutButton = new JButton("Logout");
+
+        buttonPanel.add(checkoutButton);
+        buttonPanel.add(reserveButton);
+        buttonPanel.add(logoutButton);
+
+        frame.add(tableScrollPane, BorderLayout.CENTER);
+        frame.add(buttonPanel, BorderLayout.SOUTH);
+
+        checkoutButton.addActionListener(e -> checkoutGuest(adminTable)); // Check Out Guest functionality
+        reserveButton.addActionListener(e -> reserveRoom(adminTable)); // Reserve Room functionality
+        logoutButton.addActionListener(e -> { 
+            frame.setVisible(false); // Close the admin panel 
+            AdminLogin.showLoginScreen(); // Show the login screen again 
+        });
+
+        initializeRooms(); // Initialize 20 rooms
+        updateAdminTable(); // Display the rooms in the table
+
+        frame.setVisible(true);
+    }
+
+    private static void initializeRooms() {
+        // Initialize 20 rooms
+        for (int i = 0; i < NUM_ROOMS; i++) {
+            int roomType = (i % 3) + 1; // Cycles through room types (1: Single, 2: Double, 3: Suite)
+            Room room = new Room(i + 1, roomType); // Create a new room with room number and type
+            hotelRooms[i] = room; // Store it in the array
+            room.save(); // Save the room to the database
+        }
+        JOptionPane.showMessageDialog(null, "Hotel has only 20 rooms.", "Info", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private static void checkoutGuest(JTable adminTable) {
+        int selectedRow = adminTable.getSelectedRow();
+        if (selectedRow >= 0) {
+            int roomNumber = (int) adminTable.getValueAt(selectedRow, 0);
+            Room room = Room.getRoom(roomNumber);
+
+            if (room != null && room.occupied) {
+                // Prompt to confirm checkout
+                int confirm = JOptionPane.showConfirmDialog(null, "Are you sure you want to check out the guest from room " + roomNumber + "?",
+                        "Check Out", JOptionPane.YES_NO_OPTION);
+
+                if (confirm == JOptionPane.YES_OPTION) {
+                    room.occupied = false; // Mark the room as not occupied
+                    room.guestName = ""; // Clear the guest name
+                    room.update(); // Update the room status in the database
+                    JOptionPane.showMessageDialog(null, "Guest checked out successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    updateAdminTable(); // Refresh the table
+                }
+            } else {
+                JOptionPane.showMessageDialog(null, "Room is not occupied or invalid selection.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private static void reserveRoom(JTable adminTable) {
+        int selectedRow = adminTable.getSelectedRow();
+        if (selectedRow >= 0) {
+            int roomNumber = (int) adminTable.getValueAt(selectedRow, 0);
+            Room room = Room.getRoom(roomNumber);
+
+            if (room != null && !room.occupied) {
+                String guestName = JOptionPane.showInputDialog(null, "Enter guest name for room " + roomNumber);
+
+                if (guestName != null && !guestName.trim().isEmpty()) {
+                    room.guestName = guestName;
+                    room.occupied = true;
+                    room.update(); // Update the room status in the database
+                    JOptionPane.showMessageDialog(null, "Room reserved successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    updateAdminTable(); // Refresh the admin table
+                }
+            } else {
+                JOptionPane.showMessageDialog(null, "Room is already occupied or invalid selection.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    public static void updateAdminTable() {
+        adminTableModel.setRowCount(0); // Clear existing rows
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement("SELECT * FROM rooms");
+             ResultSet resultSet = preparedStatement.executeQuery()) {
+
+            while (resultSet.next()) {
+                adminTableModel.addRow(new Object[]{
+                        resultSet.getInt("room_number"),
+                        resultSet.getInt("room_type") == 1 ? "Single" : resultSet.getInt("room_type") == 2 ? "Double" : "Suite",
+                        resultSet.getInt("occupied") == 1 ? "Yes" : "No",
+                        resultSet.getString("guest_name")
+                });
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+class UserPanel {
+
+    public static void showUserPanel() {
+        JFrame userFrame = new JFrame("User Panel");
+        userFrame.setSize(800, 600);
+        userFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        userFrame.setLayout(new BorderLayout());
+
+        DefaultTableModel userTableModel = new DefaultTableModel(new String[]{"Room Number", "Room Type", "Occupied", "Guest Name"}, 0);
+        JTable userTable = new JTable(userTableModel);
+
+        JScrollPane tableScrollPane = new JScrollPane(userTable);
+        JPanel buttonPanel = new JPanel();
+
+        JButton checkoutButton = new JButton("Check Out");
+        JButton logoutButton = new JButton("Logout");
+
+        buttonPanel.add(checkoutButton);
+        buttonPanel.add(logoutButton);
+
+        userFrame.add(tableScrollPane, BorderLayout.CENTER);
+        userFrame.add(buttonPanel, BorderLayout.SOUTH);
+
+        // Show rooms available for the user
+        updateUserTable(userTableModel);
+
+        // Action listener for checkout
+        checkoutButton.addActionListener(e -> checkoutUserRoom(userTable));
+
+        // Action listener for logout
+        logoutButton.addActionListener(e -> {
+            userFrame.setVisible(false); // Close the user panel
+            AdminLogin.showLoginScreen(); // Show the login screen again
+        });
+
+        userFrame.setVisible(true);
+    }
+
+    private static void updateUserTable(DefaultTableModel userTableModel) {
+        userTableModel.setRowCount(0); // Clear existing rows
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement("SELECT * FROM rooms WHERE occupied = 1");
+             ResultSet resultSet = preparedStatement.executeQuery()) {
+
+            while (resultSet.next()) {
+                userTableModel.addRow(new Object[]{
+                        resultSet.getInt("room_number"),
+                        resultSet.getInt("room_type") == 1 ? "Single" : resultSet.getInt("room_type") == 2 ? "Double" : "Suite",
+                        resultSet.getInt("occupied") == 1 ? "Yes" : "No",
+                        resultSet.getString("guest_name")
+                });
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void checkoutUserRoom(JTable userTable) {
+        int selectedRow = userTable.getSelectedRow();
+        if (selectedRow >= 0) {
+            int roomNumber = (int) userTable.getValueAt(selectedRow, 0);
+            Room room = Room.getRoom(roomNumber);
+
+            if (room != null && room.occupied) {
+                int confirm = JOptionPane.showConfirmDialog(null, "Are you sure you want to check out from room " + roomNumber + "?",
+                        "Check Out", JOptionPane.YES_NO_OPTION);
+
+                if (confirm == JOptionPane.YES_OPTION) {
+                    room.occupied = false; // Mark the room as not occupied
+                    room.guestName = ""; // Clear the guest name
+                    room.update(); // Update the room status in the database
+                    JOptionPane.showMessageDialog(null, "Checked out successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    updateUserTable((DefaultTableModel) userTable.getModel()); // Refresh the user table
+                }
+            } else {
+                JOptionPane.showMessageDialog(null, "Room is not occupied or invalid selection.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+}
+
+public class ReservvationGUI {
+    public static void main(String[] args) {
+        DatabaseInitializer.initialize(); // Ensure database is initialized
+        AdminLogin.showLoginScreen(); // Show the login screen
+    }
+}
